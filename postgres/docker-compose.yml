@@ -1,0 +1,36 @@
+# ── Standalone PostgreSQL ──────────────────────────────────────────────────────
+# Deploy this on any host. The port is exposed so noderouter-core and noderouter-runner
+# can connect from other hosts.
+#
+# Usage:
+#   cp .env.example .env        # fill in POSTGRES_PASSWORD at minimum
+#   docker compose up -d
+#
+# To use an existing (external) PostgreSQL server instead, skip this file
+# entirely and set DATABASE_URL in core/.env and runner/.env directly.
+
+services:
+  noderouter-postgres:
+    image: postgres:17-alpine
+    container_name: noderouter-postgres
+    restart: unless-stopped
+    ports:
+      # Bind only to localhost by default. For remote access change to "0.0.0.0:5432:5432"
+      # or set POSTGRES_BIND_ADDR in your .env.
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-noderouter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB:       ${POSTGRES_DB:-noderouter}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-noderouter} -d ${POSTGRES_DB:-noderouter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  postgres_data:
+    driver: local

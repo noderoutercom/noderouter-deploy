@@ -1,0 +1,40 @@
+# ── Noderouter Core ───────────────────────────────────────────────────────────
+# Deploy this after PostgreSQL is running (local or external).
+# No dependency on noderouter-runner — runners register themselves.
+#
+# Usage:
+#   cp .env.example .env        # fill in all required values
+#   docker compose up -d        # pulls CORE_IMAGE from Docker Hub and starts
+
+services:
+  noderouter-core:
+    image: ${CORE_IMAGE:?CORE_IMAGE is required — set it in .env}
+    container_name: noderouter-core
+    restart: unless-stopped
+    ports:
+      - "${CORE_BIND_ADDR:-0.0.0.0}:${CORE_PORT:-3000}:3000"
+    environment:
+      APP_ENV:        ${APP_ENV:-production}
+      PORT:           "3000"
+      # Full PostgreSQL DSN — can point to any reachable postgres instance
+      DATABASE_URL:   ${DATABASE_URL:?DATABASE_URL is required}
+      # Secrets — generate with: openssl rand -hex 32
+      JWT_SECRET:     ${JWT_SECRET:?JWT_SECRET is required}
+      PAIRING_KEY:    ${PAIRING_KEY:?PAIRING_KEY is required}
+      # RUNNER_SECRET must match the value set in every runner's .env
+      RUNNER_SECRET:  ${RUNNER_SECRET:?RUNNER_SECRET is required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+    volumes:
+      # Uploaded ZIP archives — core's private storage, not shared with runners.
+      # Runners fetch app code directly from the PostgreSQL blob store (code_bytes).
+      - uploads_data:/app/storage/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  uploads_data:
+    driver: local

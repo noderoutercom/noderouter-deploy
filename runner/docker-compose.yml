@@ -1,0 +1,57 @@
+# ── Noderouter Runner ─────────────────────────────────────────────────────────
+# Deploy this on any host — the same host as core, or a completely separate one.
+# Multiple runners can run independently; each registers itself with core.
+#
+# Usage (single runner):
+#   cp .env.example .env        # fill in CORE_WS_URL, DATABASE_URL, RUNNER_SECRET
+#   docker compose up -d
+#
+# Usage (multiple runners on the same host):
+#   RUNNER_NAME=node2 docker compose --project-name noderouter-runner-node2 up -d
+#   RUNNER_NAME=node3 docker compose --project-name noderouter-runner-node3 up -d
+#
+# No dependency on the postgres container — the runner tolerates a temporarily
+# unreachable database and retries the async listener automatically.
+
+services:
+  noderouter-runner:
+    image: ${RUNNER_IMAGE:?RUNNER_IMAGE is required — set it in .env}
+    # RUNNER_NAME differentiates multiple runners on the same host.
+    container_name: noderouter-runner-${RUNNER_NAME:-node1}
+    # NOTE: hostname: directive is intentionally omitted — it triggers sethostname()
+    # which fails on Docker Desktop for Windows. HOSTNAME is passed as an env var
+    # instead; the runner reads os.getenv("HOSTNAME") so behaviour is identical.
+    restart: unless-stopped
+    environment:
+      # Stable node name used by core for registration — must be unique per runner.
+      HOSTNAME: noderouter-runner-${RUNNER_NAME:-node1}
+
+      # ── Core connection ──────────────────────────────────────────────────────
+      CORE_WS_URL: ${CORE_WS_URL:?CORE_WS_URL is required}
+
+      # ── Database connection ──────────────────────────────────────────────────
+      # Same PostgreSQL instance as core uses.
+      # Required for: async job queue (LISTEN/NOTIFY), app blob preload at startup.
+      # Without this, the runner starts in sync-only mode and cannot preload apps.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+
+      # ── Auth ────────────────────────────────────────────────────────────────
+      # Must match RUNNER_SECRET in core's .env exactly.
+      RUNNER_SECRET: ${RUNNER_SECRET:?RUNNER_SECRET is required}
+
+      # Optional: pin a specific node UUID (leave blank for auto-registration)
+      NODE_ID: ${NODE_ID:-}
+
+      # ── Performance ─────────────────────────────────────────────────────────
+      APPS_DIR:           /apps
+      ASYNC_MAX_WORKERS:  ${ASYNC_MAX_WORKERS:-4}
+      SYNC_MAX_WORKERS:   ${SYNC_MAX_WORKERS:-8}
+
+    volumes:
+      # Runner's private working directory — populated from the PostgreSQL blob
+      # store at startup. No shared volume with core is required.
+      - runner_apps:/apps
+
+volumes:
+  runner_apps:
+    driver: local
