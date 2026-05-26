@@ -369,6 +369,9 @@ echo -e "${BOLD}${CYAN}╚══════════════════
 
 check_deps
 
+# Create service directories up front so .env writes never fail on a fresh machine
+mkdir -p "${DEPLOY_DIR}/postgres" "${DEPLOY_DIR}/core" "${DEPLOY_DIR}/runner"
+
 echo
 info "Docker Hub username — used to pre-fill image name defaults."
 read -r -p "  Docker Hub username [06042013]: " DOCKERHUB_USER </dev/tty
