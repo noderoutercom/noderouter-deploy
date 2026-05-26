@@ -24,26 +24,59 @@ completely separate machines.
 
 ## Quick Start — Interactive Setup
 
-Run these commands on any Linux / macOS machine with Docker installed:
+> **Prerequisites:** [Docker Desktop](https://docs.docker.com/desktop/) must be installed and running.
+
+The script creates `postgres/`, `core/`, and `runner/` subdirectories in your
+current working directory — run it from a dedicated folder.
+
+---
+
+### Linux / macOS
 
 ```bash
 mkdir noderouter && cd noderouter
 bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
 ```
 
-The script will download all required compose files, prompt for configuration values,
-auto-generate cryptographic secrets, and optionally start the containers.
+---
 
-> **Why `mkdir noderouter` first?**
-> The script creates `postgres/`, `core/`, and `runner/` subdirectories in the
-> current working directory. Running from a dedicated folder keeps everything tidy.
+### Windows
 
-Or clone the full repo instead:
+The script requires a bash shell. Use **Git Bash** (comes with [Git for Windows](https://git-scm.com/download/win)) or **WSL**.
+
+**Option A — Git Bash** *(recommended, no extra setup needed)*
+
+Open **Git Bash** and run:
+
+```bash
+mkdir noderouter && cd noderouter
+bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
+```
+
+**Option B — WSL** *(Ubuntu or any distro)*
+
+Open your **WSL terminal** and run:
+
+```bash
+mkdir noderouter && cd noderouter
+bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
+```
+
+> Make sure **Docker Desktop → Settings → Resources → WSL Integration** is enabled
+> for your distro so Docker is available inside WSL.
+
+---
+
+### Clone instead of curl
+
+If you prefer to inspect the scripts before running:
 
 ```bash
 git clone https://github.com/noderoutercom/noderouter-deploy.git && cd noderouter-deploy
 bash scripts/setup.sh
 ```
+
+---
 
 ### Update env vars on a running service
 
