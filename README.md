@@ -24,21 +24,26 @@ completely separate machines.
 
 ## Quick Start — Interactive Setup
 
-Run this single command on any Linux / macOS machine with Docker installed:
+Run these commands on any Linux / macOS machine with Docker installed:
 
 ```bash
+mkdir noderouter && cd noderouter
 bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
 ```
 
-Or download first, then run (recommended — lets you inspect before executing):
+The script will download all required compose files, prompt for configuration values,
+auto-generate cryptographic secrets, and optionally start the containers.
+
+> **Why `mkdir noderouter` first?**
+> The script creates `postgres/`, `core/`, and `runner/` subdirectories in the
+> current working directory. Running from a dedicated folder keeps everything tidy.
+
+Or clone the full repo instead:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh -o setup.sh
-bash setup.sh
+git clone https://github.com/noderoutercom/noderouter-deploy.git && cd noderouter-deploy
+bash scripts/setup.sh
 ```
-
-The script prompts for all required values, auto-generates cryptographic secrets,
-and optionally starts the containers.
 
 ### Update env vars on a running service
 

@@ -8,9 +8,9 @@
 #   bash update-env.sh <service> [KEY=VALUE ...]
 #
 # Services:
-#   postgres          →  deploy/postgres/.env
-#   core              →  deploy/core/.env
-#   runner.<name>     →  deploy/runner/.env.<name>   (e.g. runner.node1)
+#   postgres          →  postgres/.env
+#   core              →  core/.env
+#   runner.<name>     →  runner/.env.<name>   (e.g. runner.node1)
 #
 # Examples:
 #   bash update-env.sh core ADMIN_PASSWORD=NewPass123
@@ -23,8 +23,14 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+BASE_URL="https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main"
+
+if [[ -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+else
+  DEPLOY_DIR="$(pwd)"
+fi
 
 info()    { echo -e "${CYAN}ℹ  $1${NC}"; }
 success() { echo -e "${GREEN}✓  $1${NC}"; }

@@ -10,8 +10,17 @@ trap 'echo -e "\n${RED}✗ Deploy aborted — check the error above.${NC}" >&2' 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+# Base URL for downloading compose/example files when running via curl pipe
+BASE_URL="https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main"
+
+# When run as a file (cloned repo):  DEPLOY_DIR = parent of scripts/
+# When piped via curl:               DEPLOY_DIR = current working directory
+if [[ -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
+else
+  DEPLOY_DIR="$(pwd)"
+fi
 
 header()  { echo -e "\n${BOLD}${BLUE}━━━ $1 ━━━${NC}"; }
 success() { echo -e "${GREEN}✓ $1${NC}"; }
@@ -81,6 +90,31 @@ wait_healthy() {
     info "  Still waiting… (${elapsed}s / ${max_wait}s)"
   done
   success "${container} is healthy"
+}
+
+# ensure_compose_files — downloads docker-compose.yml + .env.example from GitHub
+# if they are missing (i.e. running via curl pipe rather than a cloned repo).
+ensure_compose_files() {
+  local services=(postgres core runner)
+  local needed=false
+  for svc in "${services[@]}"; do
+    [ -f "${DEPLOY_DIR}/${svc}/docker-compose.yml" ] || { needed=true; break; }
+  done
+  [ "$needed" = "false" ] && return 0
+
+  info "Compose files not found locally — downloading from GitHub…"
+  for svc in "${services[@]}"; do
+    local dir="${DEPLOY_DIR}/${svc}"
+    mkdir -p "$dir"
+    if [ ! -f "${dir}/docker-compose.yml" ]; then
+      curl -fsSL "${BASE_URL}/${svc}/docker-compose.yml" -o "${dir}/docker-compose.yml" \
+        || { err "Failed to download ${svc}/docker-compose.yml"; exit 1; }
+      success "Downloaded ${svc}/docker-compose.yml"
+    fi
+    if [ ! -f "${dir}/.env.example" ]; then
+      curl -fsSL "${BASE_URL}/${svc}/.env.example" -o "${dir}/.env.example" 2>/dev/null || true
+    fi
+  done
 }
 
 # ensure_gitignored — adds deploy .env patterns to .gitignore to prevent secret commits
@@ -356,6 +390,7 @@ if [ "$DEPLOY_CORE"     = "true" ]; then setup_core;     fi
 if [ "$DEPLOY_RUNNER"   = "true" ]; then setup_runner;   fi
 
 ensure_gitignored
+ensure_compose_files
 
 header "Deploy"
 if ask_yn "Start configured services now?"; then
