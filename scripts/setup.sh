@@ -234,6 +234,7 @@ setup_postgres() {
   pg_pass=$(ask_secret "POSTGRES_PASSWORD (stored in postgres/.env)")
   pg_db=$(ask "POSTGRES_DB" "noderouter")
 
+  mkdir -p "${DEPLOY_DIR}/postgres"
   cat > "$env_file" <<EOF
 POSTGRES_BIND_ADDR=${bind_addr}
 POSTGRES_PORT=${pg_port}
@@ -275,6 +276,7 @@ setup_core() {
   echo
   admin_pass=$(ask "ADMIN_PASSWORD")
 
+  mkdir -p "${DEPLOY_DIR}/core"
   cat > "$env_file" <<EOF
 CORE_IMAGE=${core_image}
 CORE_PORT=${core_port}
@@ -328,6 +330,7 @@ setup_runner() {
   async_workers=$(ask "ASYNC_MAX_WORKERS" "4")
   sync_workers=$(ask "SYNC_MAX_WORKERS" "8")
 
+  mkdir -p "${DEPLOY_DIR}/runner"
   cat > "$env_file" <<EOF
 RUNNER_IMAGE=${runner_image}
 RUNNER_NAME=${runner_name}
