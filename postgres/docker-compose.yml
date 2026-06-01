@@ -17,9 +17,8 @@ services:
     networks:
       - noderouter
     ports:
-      # Bind only to localhost by default. For remote access change to "0.0.0.0:5432:5432"
-      # or set POSTGRES_BIND_ADDR in your .env.
-      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+      # Bound to localhost only — access via the noderouter Docker network or local psql/DBeaver
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER:     ${POSTGRES_USER:-noderouter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
