@@ -279,6 +279,7 @@ setup_core() {
   db_url=$(ask "DATABASE_URL" "${BUNDLED_DATABASE_URL:-}")
   CORE_DATABASE_URL="$db_url"
   core_port=$(ask "CORE_PORT (host port)" "3000")
+  CORE_PORT_VAL="$core_port"
 
   # Bind to localhost only when nginx sits in front; otherwise expose on all interfaces.
   if [ "${USE_NGINX:-false}" = "true" ]; then
@@ -407,6 +408,31 @@ EOF
 # Deploy helpers
 # -----------------------------------------------------------------------------
 
+print_summary() {
+  local base_url="$1"
+  local W=54
+
+  local sep; sep=$(printf '═%.0s' $(seq 1 $W))
+
+  row() {
+    local txt="${1:-}"
+    local pad=$(( W - ${#txt} - 2 ))
+    [ $pad -lt 0 ] && pad=0
+    printf "${BOLD}${CYAN}  ║${NC} %-s%${pad}s ${BOLD}${CYAN}║${NC}\n" "$txt" ""
+  }
+
+  echo -e ""
+  echo -e "${BOLD}${CYAN}  ╔${sep}╗${NC}"
+  row ""
+  row "  ${GREEN}✓${CYAN}  Noderouter is up and running"
+  row ""
+  row "  Web UI   →  ${NC}${BOLD}${base_url}${CYAN}"
+  row "  Admin    →  ${NC}${BOLD}${base_url}/admin${CYAN}"
+  row ""
+  echo -e "${BOLD}${CYAN}  ╚${sep}╝${NC}"
+  echo -e ""
+}
+
 start_service() {
   local name="$1" env_file="$2" project="${3:-noderouter-${1}}"
   info "Starting ${name}…"
@@ -452,15 +478,16 @@ NGINX_CERT_TYPE="1"
 CORE_RUNNER_SECRET=""
 BUNDLED_DATABASE_URL=""
 CORE_DATABASE_URL=""
+CORE_PORT_VAL="3000"
 PG_USER="noderouter"
 PG_PASS=""
 PG_DB="noderouter"
 PG_PORT="5432"
 
-if ask_yn "Configure PostgreSQL?";          then DEPLOY_POSTGRES=true; fi
-if ask_yn "Configure Core?";               then DEPLOY_CORE=true;     fi
 if ask_yn "Configure nginx HTTPS proxy?"; then USE_NGINX=true;       fi
-if ask_yn "Configure Runner?";             then DEPLOY_RUNNER=true;   fi
+if ask_yn "Configure PostgreSQL?";         then DEPLOY_POSTGRES=true; fi
+if ask_yn "Configure Core?";              then DEPLOY_CORE=true;     fi
+if ask_yn "Configure Runner?";            then DEPLOY_RUNNER=true;   fi
 
 # nginx must be known before core (affects CORE_BIND_ADDR) and runner (affects CORE_WS_URL default)
 if [ "$DEPLOY_POSTGRES" = "true" ]; then setup_postgres; fi
@@ -535,5 +562,10 @@ if [ "$DEPLOY_RUNNER" = "true" ]; then
   done
 fi
 
-echo
-success "All done! Run 'docker ps' to verify."
+local base_url
+if [ "${USE_NGINX:-false}" = "true" ] && [ -n "${NGINX_DOMAIN:-}" ]; then
+  base_url="https://${NGINX_DOMAIN}"
+else
+  base_url="http://localhost:${CORE_PORT_VAL:-3000}"
+fi
+print_summary "$base_url"
