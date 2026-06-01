@@ -48,10 +48,9 @@ ask() {
   echo "$val"
 }
 
-# ask_secret "Label"  →  shows auto-generated value, allows override
+# ask_secret "Label" [pregenerated]  →  shows value, allows override
 ask_secret() {
-  local label="$1" generated
-  generated="$(gen_secret)"
+  local label="$1" generated="${2:-$(gen_secret)}"
   echo -e "  ${CYAN}Auto-generated:${NC} ${generated}" >&2
   read -r -p "  ${label} [press Enter to use above, or type your own]: " val </dev/tty
   echo "${val:-$generated}"
@@ -242,7 +241,6 @@ setup_postgres() {
 
   PG_PORT=$(ask "POSTGRES_PORT" "5432")
   PG_USER=$(ask "POSTGRES_USER" "noderouter")
-  PG_PASS=$(ask_secret "POSTGRES_PASSWORD")
   PG_DB=$(ask "POSTGRES_DB" "noderouter")
 
   # Construct DATABASE_URL once — reused as the default in setup_core and setup_runner
@@ -275,7 +273,7 @@ setup_core() {
   echo
   info "DATABASE_URL — the PostgreSQL DSN core will connect to."
 
-  local db_url core_port jwt_secret runner_secret admin_pass bind_addr
+  local db_url core_port bind_addr
   db_url=$(ask "DATABASE_URL" "${BUNDLED_DATABASE_URL:-}")
   CORE_DATABASE_URL="$db_url"
   core_port=$(ask "CORE_PORT (host port)" "3000")
@@ -289,14 +287,6 @@ setup_core() {
     bind_addr="0.0.0.0"
   fi
 
-  echo
-  info "Generating secrets (press Enter to accept each auto-generated value):"
-  jwt_secret=$(ask_secret "JWT_SECRET")
-  runner_secret=$(ask_secret "RUNNER_SECRET (copy this to every runner's .env)")
-
-  echo
-  admin_pass=$(ask_secret "ADMIN_PASSWORD")
-
   mkdir -p "${DEPLOY_DIR}/core"
   cat > "$env_file" <<EOF
 CORE_IMAGE=${core_image}
@@ -304,17 +294,11 @@ CORE_PORT=${core_port}
 CORE_BIND_ADDR=${bind_addr}
 APP_ENV=production
 DATABASE_URL=${db_url}
-JWT_SECRET=${jwt_secret}
-RUNNER_SECRET=${runner_secret}
-ADMIN_PASSWORD=${admin_pass}
+JWT_SECRET=${JWT_SECRET}
+RUNNER_SECRET=${RUNNER_SECRET}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
 EOF
   success "core/.env written"
-  echo
-  warn "RUNNER_SECRET = ${runner_secret}"
-  warn "→ Copy this value when you set up each runner."
-
-  # Store for runner setup to reference
-  CORE_RUNNER_SECRET="$runner_secret"
 }
 
 setup_nginx() {
@@ -383,7 +367,7 @@ setup_runner() {
   local db_url="${CORE_DATABASE_URL:-${BUNDLED_DATABASE_URL:-}}"
 
   echo
-  runner_secret=$(ask "RUNNER_SECRET" "${CORE_RUNNER_SECRET:-}")
+  runner_secret=$(ask "RUNNER_SECRET" "${RUNNER_SECRET:-}")
 
   async_workers=$(ask "ASYNC_MAX_WORKERS" "4")
   sync_workers=$(ask "SYNC_MAX_WORKERS" "8")
@@ -429,6 +413,15 @@ print_summary() {
   row ""
   echo -e "${BOLD}${CYAN}  ╚${sep}╝${NC}"
   echo -e ""
+
+  if [ -n "${ADMIN_PASSWORD:-}" ] || [ -n "${RUNNER_SECRET:-}" ]; then
+    echo -e "${BOLD}${YELLOW}  Secrets — save these now:${NC}"
+    [ -n "${ADMIN_PASSWORD:-}" ] && echo -e "  ${BOLD}ADMIN_PASSWORD${NC}  ${ADMIN_PASSWORD}"
+    [ -n "${RUNNER_SECRET:-}"  ] && echo -e "  ${BOLD}RUNNER_SECRET${NC}   ${RUNNER_SECRET}  ${CYAN}(copy to every runner .env)${NC}"
+    [ -n "${JWT_SECRET:-}"     ] && echo -e "  ${CYAN}JWT_SECRET${NC}      ${JWT_SECRET}  ${CYAN}(internal)${NC}"
+    [ -n "${PG_PASS:-}"        ] && echo -e "  ${CYAN}PG_PASSWORD${NC}     ${PG_PASS}  ${CYAN}(internal)${NC}"
+    echo -e ""
+  fi
 }
 
 start_service() {
@@ -473,7 +466,6 @@ USE_NGINX=false
 DEPLOY_RUNNER=false
 NGINX_DOMAIN=""
 NGINX_CERT_TYPE="1"
-CORE_RUNNER_SECRET=""
 BUNDLED_DATABASE_URL=""
 CORE_DATABASE_URL=""
 CORE_PORT_VAL="3000"
@@ -481,11 +473,40 @@ PG_USER="noderouter"
 PG_PASS=""
 PG_DB="noderouter"
 PG_PORT="5432"
+JWT_SECRET=""
+RUNNER_SECRET=""
+ADMIN_PASSWORD=""
 
 if ask_yn "Configure nginx HTTPS proxy?"; then USE_NGINX=true;       fi
 if ask_yn "Configure PostgreSQL?";         then DEPLOY_POSTGRES=true; fi
 if ask_yn "Configure Core?";              then DEPLOY_CORE=true;     fi
 if ask_yn "Configure Runner?";            then DEPLOY_RUNNER=true;   fi
+
+# ── Pre-generate secrets ──────────────────────────────────────────────────────
+[ "$DEPLOY_POSTGRES" = "true" ] && PG_PASS=$(gen_secret)
+if [ "$DEPLOY_CORE" = "true" ]; then
+  JWT_SECRET=$(gen_secret)
+  RUNNER_SECRET=$(gen_secret)
+  ADMIN_PASSWORD=$(gen_secret)
+fi
+
+# Single customization gate — one y/n replaces all individual secret prompts
+_needs_secrets=false
+[ "$DEPLOY_POSTGRES" = "true" ] && _needs_secrets=true
+[ "$DEPLOY_CORE"     = "true" ] && _needs_secrets=true
+if [ "$_needs_secrets" = "true" ]; then
+  echo
+  info "All secrets have been auto-generated."
+  if ask_yn "Customize any secret?" "n"; then
+    echo
+    [ "$DEPLOY_POSTGRES" = "true" ] && PG_PASS=$(ask_secret "POSTGRES_PASSWORD" "$PG_PASS")
+    if [ "$DEPLOY_CORE" = "true" ]; then
+      JWT_SECRET=$(ask_secret "JWT_SECRET" "$JWT_SECRET")
+      RUNNER_SECRET=$(ask_secret "RUNNER_SECRET" "$RUNNER_SECRET")
+      ADMIN_PASSWORD=$(ask_secret "ADMIN_PASSWORD" "$ADMIN_PASSWORD")
+    fi
+  fi
+fi
 
 # nginx must be known before core (affects CORE_BIND_ADDR) and runner (affects CORE_WS_URL default)
 if [ "$DEPLOY_POSTGRES" = "true" ]; then setup_postgres; fi
