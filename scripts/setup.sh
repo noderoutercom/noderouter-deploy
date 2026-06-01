@@ -266,7 +266,7 @@ setup_core() {
   echo
   info "Docker image to pull from Docker Hub."
   local core_image
-  core_image=$(ask "CORE_IMAGE" "${DOCKERHUB_USER}/noderouter-core:latest")
+  core_image=$(ask "CORE_IMAGE" "06042013/noderouter-core:latest")
 
   echo
   info "DATABASE_URL — the PostgreSQL DSN core will connect to."
@@ -372,7 +372,7 @@ setup_runner() {
   echo
   info "Docker image to pull from Docker Hub."
   local runner_image
-  runner_image=$(ask "RUNNER_IMAGE" "${DOCKERHUB_USER}/noderouter-runner:latest")
+  runner_image=$(ask "RUNNER_IMAGE" "06042013/noderouter-runner:latest")
 
   echo
   info "CORE_WS_URL — runner always runs on the same host as core."
@@ -435,10 +435,6 @@ check_deps
 # Create service directories up front so .env writes never fail on a fresh machine
 mkdir -p "${DEPLOY_DIR}/postgres" "${DEPLOY_DIR}/core" "${DEPLOY_DIR}/nginx" "${DEPLOY_DIR}/runner"
 
-echo
-info "Docker Hub username — used to pre-fill image name defaults."
-read -r -p "  Docker Hub username [06042013]: " DOCKERHUB_USER </dev/tty
-DOCKERHUB_USER="${DOCKERHUB_USER:-06042013}"
 echo
 
 header "Which services do you want to configure?"
