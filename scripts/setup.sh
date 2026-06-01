@@ -275,7 +275,7 @@ setup_core() {
   echo
   info "DATABASE_URL — the PostgreSQL DSN core will connect to."
 
-  local db_url core_port jwt_secret pairing_key runner_secret admin_pass bind_addr
+  local db_url core_port jwt_secret runner_secret admin_pass bind_addr
   db_url=$(ask "DATABASE_URL" "${BUNDLED_DATABASE_URL:-}")
   CORE_DATABASE_URL="$db_url"
   core_port=$(ask "CORE_PORT (host port)" "3000")
@@ -292,11 +292,10 @@ setup_core() {
   echo
   info "Generating secrets (press Enter to accept each auto-generated value):"
   jwt_secret=$(ask_secret "JWT_SECRET")
-  pairing_key=$(ask_secret "PAIRING_KEY")
   runner_secret=$(ask_secret "RUNNER_SECRET (copy this to every runner's .env)")
 
   echo
-  admin_pass=$(ask "ADMIN_PASSWORD")
+  admin_pass=$(ask_secret "ADMIN_PASSWORD")
 
   mkdir -p "${DEPLOY_DIR}/core"
   cat > "$env_file" <<EOF
@@ -306,7 +305,6 @@ CORE_BIND_ADDR=${bind_addr}
 APP_ENV=production
 DATABASE_URL=${db_url}
 JWT_SECRET=${jwt_secret}
-PAIRING_KEY=${pairing_key}
 RUNNER_SECRET=${runner_secret}
 ADMIN_PASSWORD=${admin_pass}
 EOF
