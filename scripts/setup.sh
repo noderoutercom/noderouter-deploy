@@ -426,9 +426,14 @@ start_service() {
 # Main
 # -----------------------------------------------------------------------------
 
-echo -e "\n${BOLD}${CYAN}╔══════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║   Noderouter Interactive Setup   ║${NC}"
-echo -e "${BOLD}${CYAN}╚══════════════════════════════════╝${NC}"
+echo -e ""
+echo -e "${BOLD}${CYAN}  █  █  ██  ███  ████ ███   ██  █  █ ████ ████ ███ ${NC}"
+echo -e "${BOLD}${CYAN}  ██ █ █  █ █  █ █    █  █ █  █ █  █  █   █    █  █${NC}"
+echo -e "${BOLD}${CYAN}  █ ██ █  █ █  █ ███  ███  █  █ █  █  █   ███  ███ ${NC}"
+echo -e "${BOLD}${CYAN}  █  █ █  █ █  █ █    █ █  █  █ █  █  █   █    █ █ ${NC}"
+echo -e "${BOLD}${CYAN}  █  █  ██  ███  ████ █  █  ██   ██   █   ████ █  █${NC}"
+echo -e "${BLUE}                 ─  Interactive Setup  ─${NC}"
+echo -e ""
 
 check_deps
 
