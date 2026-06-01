@@ -586,7 +586,7 @@ if [ "$DEPLOY_RUNNER" = "true" ]; then
   done
 fi
 
-local base_url
+base_url=""
 if [ "${USE_NGINX:-false}" = "true" ] && [ -n "${NGINX_DOMAIN:-}" ]; then
   base_url="https://${NGINX_DOMAIN}"
 else
