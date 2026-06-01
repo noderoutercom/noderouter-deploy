@@ -1,35 +1,32 @@
-# Noderouter — Distributed Deployment Guide
+# Noderouter — Deployment Guide
 
-Three independently deployable units. Each can run on the same host or on
-completely separate machines.
+All services run on the **same host**, connected through a shared Docker network (`noderouter`).
 
 ```
-┌─────────────────┐        ┌──────────────────────────────────────┐
-│   postgres/     │◄───────│   core/                              │
-│                 │        │   (reads/writes app blobs to DB)     │
-│  Any PostgreSQL │◄───────┤                                      │
-│  server works   │        └─────────────────┬────────────────────┘
-└─────────────────┘                          │ WebSocket
-                                             │ (CORE_WS_URL)
-                           ┌─────────────────▼─────────┐
-                           │   runner/  ×N              │
-                           │                            │
-                           │  • Registers with core     │
-                           │  • Pulls app blobs from DB │
-                           │  • No shared volume needed │
-                           └────────────────────────────┘
+                        ┌─────────────────────────────────┐
+  Browser / Runner      │         noderouter network       │
+        │               │                                  │
+        │  :443 / :80   │  ┌──────────┐   ┌───────────┐   │
+        └──────────────►│  │  nginx   │──►│   core    │   │
+           (optional)   │  └──────────┘   └─────┬─────┘   │
+                        │                        │         │
+                        │               ┌────────▼──────┐  │
+                        │               │   postgres    │  │
+                        │               └───────────────┘  │
+                        │                                  │
+                        │        ┌──────────────┐          │
+                        │        │   runner ×N  │          │
+                        │        └──────────────┘          │
+                        └─────────────────────────────────┘
 ```
+
+Services talk to each other by container name (e.g. `noderouter-core`, `noderouter-postgres`) — no host IPs needed.
 
 ---
 
 ## Quick Start — Interactive Setup
 
 > **Prerequisites:** [Docker Desktop](https://docs.docker.com/desktop/) must be installed and running.
-
-The script creates `postgres/`, `core/`, and `runner/` subdirectories in your
-current working directory — run it from a dedicated folder.
-
----
 
 ### Linux / macOS
 
@@ -38,117 +35,129 @@ mkdir noderouter && cd noderouter
 bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
 ```
 
----
-
 ### Windows
 
-The script requires a bash shell. Use **Git Bash** (comes with [Git for Windows](https://git-scm.com/download/win)) or **WSL**.
-
-**Option A — Git Bash** *(recommended, no extra setup needed)*
-
-Open **Git Bash** and run:
+Use **Git Bash** ([Git for Windows](https://git-scm.com/download/win)) or **WSL**:
 
 ```bash
 mkdir noderouter && cd noderouter
 bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
 ```
 
-**Option B — WSL** *(Ubuntu or any distro)*
-
-Open your **WSL terminal** and run:
-
-```bash
-mkdir noderouter && cd noderouter
-bash <(curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/setup.sh)
-```
-
-> Make sure **Docker Desktop → Settings → Resources → WSL Integration** is enabled
-> for your distro so Docker is available inside WSL.
-
----
+> **WSL users:** enable Docker Desktop → Settings → Resources → WSL Integration for your distro.
 
 ### Clone instead of curl
-
-If you prefer to inspect the scripts before running:
 
 ```bash
 git clone https://github.com/noderoutercom/noderouter-deploy.git && cd noderouter-deploy
 bash scripts/setup.sh
 ```
 
----
-
-### Update env vars on a running service
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main/scripts/update-env.sh -o update-env.sh
-bash update-env.sh core ADMIN_PASSWORD=NewPass
-bash update-env.sh runner.node1 ASYNC_MAX_WORKERS=8
-bash update-env.sh postgres   # opens $EDITOR for freeform editing
-```
+The script walks you through each service in order, writes `.env` files, and starts everything. Existing `.env` files are skipped so you can re-run safely to add services later.
 
 ---
 
 ## Manual Setup
 
-### 1. PostgreSQL
+### 0. Shared Docker network
 
-> Skip if you already have a PostgreSQL server.
+All services share one named network. It is created automatically by the first `docker compose up`, but you can also create it manually:
 
 ```bash
-cd postgres
-cp .env.example .env        # edit: POSTGRES_PASSWORD (required), POSTGRES_BIND_ADDR
-docker compose up -d
+docker network create noderouter
 ```
 
-Set `POSTGRES_BIND_ADDR=0.0.0.0` if core or runners run on **different** hosts.
+> If a stale `noderouter` network exists from a previous install, remove it first:
+> `docker network rm noderouter`
 
 ---
 
-### 2. Core
+### 1. nginx HTTPS *(optional)*
+
+Skip this section if you use Cloudflare or another external proxy, or if you only need HTTP.
+
+When nginx is in front, set `CORE_BIND_ADDR=127.0.0.1` in `core/.env` so port 3000 is not exposed publicly.
+
+#### Local dev — self-signed certificate
+
+```bash
+cd nginx
+cp .env.example .env        # set DOMAIN_NAME=your-local-hostname
+bash init-self-signed.sh
+docker compose --env-file .env up -d
+```
+
+> Browsers will show a security warning for self-signed certs. Import `fullchain.pem` into your OS trust store to suppress it.
+
+#### Production — Let's Encrypt
+
+Requires a public domain with a DNS A record pointing to this server before running:
+
+```bash
+cd nginx
+cp .env.example .env        # set DOMAIN_NAME and CERTBOT_EMAIL
+bash init-certs.sh
+docker compose --env-file .env up -d
+```
+
+Certificates auto-renew every 12 hours via the `certbot` sidecar. nginx reloads nightly at 3 am to pick up renewed certs.
+
+---
+
+### 2. PostgreSQL
+
+> Skip if you already have a PostgreSQL server — just set `DATABASE_URL` in `core/.env`.
+
+```bash
+cd postgres
+cp .env.example .env        # set POSTGRES_PASSWORD
+docker compose --project-name noderouter-postgres up -d
+```
+
+Port 5432 is bound to `127.0.0.1` (localhost only). Core and runner connect via the `noderouter` Docker network using the container name `noderouter-postgres` — no host port access needed.
+
+---
+
+### 3. Core
 
 ```bash
 cd core
 cp .env.example .env
 # Fill in:
-#   DATABASE_URL  — DSN pointing to your postgres
-#   JWT_SECRET    — openssl rand -hex 32
-#   PAIRING_KEY   — openssl rand -hex 32
-#   RUNNER_SECRET — openssl rand -hex 32   ← copy this to every runner
+#   DATABASE_URL   — postgresql://noderouter:PASSWORD@noderouter-postgres:5432/noderouter?sslmode=disable
+#   JWT_SECRET     — openssl rand -hex 32
+#   PAIRING_KEY    — openssl rand -hex 32
+#   RUNNER_SECRET  — openssl rand -hex 32   ← copy this to every runner
 #   ADMIN_PASSWORD
-docker compose up -d
+#
+# With nginx in front:  CORE_BIND_ADDR=127.0.0.1
+# Without nginx:        CORE_BIND_ADDR=0.0.0.0  (default)
+docker compose --project-name noderouter-core up -d
 ```
 
 ---
 
-### 3. Runner(s)
+### 4. Runner(s)
 
-Each runner is independent. Repeat for every node you want to add.
+Runners run on the **same host** as core and connect via the shared Docker network.
 
 ```bash
 cd runner
 cp .env.example .env
 # Fill in:
-#   RUNNER_NAME    — unique per host (e.g. node1, node2, gpu-node)
-#   CORE_WS_URL    — ws://<core-host>:3000
-#   DATABASE_URL   — same postgres as core
+#   RUNNER_NAME    — unique per runner (e.g. node1, node2)
 #   RUNNER_SECRET  — must match core's RUNNER_SECRET exactly
+#   DATABASE_URL   — same postgres as core
+#
+# CORE_WS_URL defaults to ws://noderouter-core:3000 — no change needed.
 docker compose --project-name noderouter-runner-node1 up -d
 ```
 
-#### Running multiple runners on the same host
+#### Multiple runners on the same host
 
-Each runner needs a unique `RUNNER_NAME` and a separate compose project name:
+The setup script writes per-runner env files as `runner/.env.<name>`. To add more manually:
 
 ```bash
-# Runner 1
-RUNNER_NAME=node1 docker compose \
-  -f runner/docker-compose.yml \
-  --env-file runner/.env.node1 \
-  --project-name noderouter-runner-node1 \
-  up -d
-
-# Runner 2
 RUNNER_NAME=node2 docker compose \
   -f runner/docker-compose.yml \
   --env-file runner/.env.node2 \
@@ -156,8 +165,17 @@ RUNNER_NAME=node2 docker compose \
   up -d
 ```
 
-The setup script writes per-runner env files as `runner/.env.<RUNNER_NAME>` and
-handles this automatically.
+---
+
+## HTTPS with an External Proxy (Cloudflare, etc.)
+
+If you use Cloudflare or another external proxy, skip the `nginx/` directory entirely:
+
+- Set `CORE_BIND_ADDR=0.0.0.0` in `core/.env` so the proxy can reach port 3000.
+- Runners use `ws://noderouter-core:3000` (internal network) — they do **not** go through the external proxy.
+- Let's Encrypt is not needed; your proxy provider handles TLS at the edge.
+
+> **Cloudflare note:** Cloudflare proxies WebSocket connections, but idle connections are dropped after ~100 seconds. The runner sends WebSocket-level pings every 20 seconds, which keeps the tunnel alive.
 
 ---
 
@@ -165,38 +183,30 @@ handles this automatically.
 
 Runners do **not** need a shared filesystem with core.
 
-On startup, each runner connects to the same PostgreSQL database and pulls all
-app `code_bytes` blobs directly. When an app is updated via the core admin panel,
-core fires a `NOTIFY app_updated` event; every connected runner fetches and
-hot-reloads the updated app automatically.
-
-This is why `DATABASE_URL` is required on runners, not just core.
-
----
-
-## Choosing a PostgreSQL Server
-
-| Scenario | Recommendation |
-|---|---|
-| Single host, small workload | Use `postgres/` bundled container |
-| Multiple hosts, own infra | Dedicated VM or bare-metal postgres, set `POSTGRES_BIND_ADDR=0.0.0.0` and firewall to core/runner IPs |
-| Managed cloud | AWS RDS, Supabase, Neon, etc. — just set `DATABASE_URL` in core and runner; skip `postgres/` entirely |
+On startup each runner connects to PostgreSQL and pulls all app `code_bytes` blobs directly. When an app is updated via the admin panel, core fires a `NOTIFY app_updated` event and every runner fetches and hot-reloads the updated app automatically. This is why `DATABASE_URL` is required on runners as well as core.
 
 ---
 
 ## Environment Variable Reference
 
-### postgres/.env
+### `nginx/.env`
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `DOMAIN_NAME` | ✅ | — | Domain nginx serves (e.g. `core.example.com`) |
+| `CERTBOT_EMAIL` | | — | Let's Encrypt account email (production only) |
+| `CERTBOT_STAGING` | | `0` | Set `1` to use staging CA during testing |
+
+### `postgres/.env`
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `POSTGRES_PASSWORD` | ✅ | — | Choose a strong password |
-| `POSTGRES_PORT` | | `5432` | Host-side port |
-| `POSTGRES_BIND_ADDR` | | `127.0.0.1` | `0.0.0.0` for remote access |
+| `POSTGRES_PORT` | | `5432` | Host-side port (for local psql / DB tools) |
 | `POSTGRES_USER` | | `noderouter` | |
 | `POSTGRES_DB` | | `noderouter` | |
 
-### core/.env
+### `core/.env`
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
@@ -205,18 +215,20 @@ This is why `DATABASE_URL` is required on runners, not just core.
 | `PAIRING_KEY` | ✅ | — | `openssl rand -hex 32` |
 | `RUNNER_SECRET` | ✅ | — | Must match every runner |
 | `ADMIN_PASSWORD` | ✅ | — | Admin panel password |
+| `CORE_IMAGE` | ✅ | `06042013/noderouter-core:latest` | Docker Hub image |
 | `CORE_PORT` | | `3000` | Host-side port |
-| `CORE_BIND_ADDR` | | `0.0.0.0` | |
+| `CORE_BIND_ADDR` | | `0.0.0.0` | Set `127.0.0.1` when nginx is in front |
 | `APP_ENV` | | `production` | |
 
-### runner/.env
+### `runner/.env`
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `CORE_WS_URL` | ✅ | — | `ws://host:3000` or `wss://host` |
 | `DATABASE_URL` | ✅ | — | Same DB as core |
-| `RUNNER_SECRET` | ✅ | — | Copy from core/.env |
-| `RUNNER_NAME` | | `node1` | Unique per host |
+| `RUNNER_SECRET` | ✅ | — | Copy from `core/.env` |
+| `RUNNER_IMAGE` | ✅ | `06042013/noderouter-runner:latest` | Docker Hub image |
+| `RUNNER_NAME` | | `node1` | Unique per runner instance |
+| `CORE_WS_URL` | | `ws://noderouter-core:3000` | Internal Docker network — no change needed |
 | `NODE_ID` | | *(auto)* | Leave blank for auto-registration |
 | `ASYNC_MAX_WORKERS` | | `4` | |
 | `SYNC_MAX_WORKERS` | | `8` | |
