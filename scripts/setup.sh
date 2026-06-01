@@ -476,7 +476,7 @@ header "Starting services"
 # ── 1. Shared Docker network ──────────────────────────────────────────────────
 if ! docker network inspect noderouter >/dev/null 2>&1; then
   info "Creating shared Docker network 'noderouter'…"
-  docker network create noderouter
+  docker network create --label com.docker.compose.network=noderouter noderouter
   success "Network 'noderouter' created"
 fi
 
