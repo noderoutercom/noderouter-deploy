@@ -1,0 +1,60 @@
+# ── Noderouter nginx + certbot ─────────────────────────────────────────────────
+# Provides HTTPS termination for the core service.
+#
+# Prerequisites:
+#   1. docker network create noderouter  (once per host)
+#   2. Run init-self-signed.sh (local) or init-certs.sh (production) first
+#
+# Usage:
+#   cp .env.example .env           # fill in DOMAIN_NAME (and CERTBOT_EMAIL)
+#   bash init-self-signed.sh       # local dev
+#   bash init-certs.sh             # production (requires public domain + DNS)
+#   docker compose --env-file .env up -d
+
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: noderouter-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./templates:/etc/nginx/templates:ro
+      - ./conf.d/map.conf:/etc/nginx/conf.d/map.conf:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME:?DOMAIN_NAME is required — set it in .env}
+    # Run crond alongside nginx so certs are reloaded nightly after certbot renewal
+    command: >
+      /bin/sh -c "echo '0 3 * * * nginx -s reload' | crontab - && crond && nginx -g 'daemon off;'"
+    networks:
+      - noderouter
+
+  certbot:
+    image: certbot/certbot
+    container_name: noderouter-certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Renewal loop: check every 12h, renew 30 days before expiry
+    entrypoint: >
+      /bin/sh -c "trap exit TERM;
+      while :; do
+        certbot renew --quiet --webroot --webroot-path /var/www/certbot;
+        sleep 12h & wait $${!};
+      done"
+    networks:
+      - noderouter
+
+volumes:
+  certbot_conf:
+    driver: local
+  certbot_www:
+    driver: local
+
+networks:
+  noderouter:
+    external: true

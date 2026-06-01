@@ -95,7 +95,7 @@ wait_healthy() {
 # ensure_compose_files — downloads docker-compose.yml + .env.example from GitHub
 # if they are missing (i.e. running via curl pipe rather than a cloned repo).
 ensure_compose_files() {
-  local services=(postgres core runner)
+  local services=(postgres core nginx runner)
   local needed=false
   for svc in "${services[@]}"; do
     [ -f "${DEPLOY_DIR}/${svc}/docker-compose.yml" ] || { needed=true; break; }
@@ -115,6 +115,15 @@ ensure_compose_files() {
       curl -fsSL "${BASE_URL}/${svc}/.env.example" -o "${dir}/.env.example" 2>/dev/null || true
     fi
   done
+  # nginx also needs its template and map files
+  local nginx_dir="${DEPLOY_DIR}/nginx"
+  mkdir -p "${nginx_dir}/templates" "${nginx_dir}/conf.d"
+  for f in templates/noderouter.conf.template conf.d/map.conf init-certs.sh init-self-signed.sh; do
+    if [ ! -f "${nginx_dir}/${f}" ]; then
+      curl -fsSL "${BASE_URL}/nginx/${f}" -o "${nginx_dir}/${f}" 2>/dev/null || true
+    fi
+  done
+  chmod +x "${nginx_dir}/init-certs.sh" "${nginx_dir}/init-self-signed.sh" 2>/dev/null || true
 }
 
 # ensure_gitignored — adds deploy .env patterns to .gitignore to prevent secret commits
@@ -263,9 +272,17 @@ setup_core() {
   info "DATABASE_URL — the PostgreSQL DSN core will connect to."
   info "  Example: postgresql://noderouter:PASSWORD@localhost:5432/noderouter?sslmode=disable"
 
-  local db_url core_port jwt_secret pairing_key runner_secret admin_pass
+  local db_url core_port jwt_secret pairing_key runner_secret admin_pass bind_addr
   db_url=$(ask "DATABASE_URL")
   core_port=$(ask "CORE_PORT (host port)" "3000")
+
+  # Bind to localhost only when nginx sits in front; otherwise expose on all interfaces.
+  if [ "${USE_NGINX:-false}" = "true" ]; then
+    bind_addr="127.0.0.1"
+    info "CORE_BIND_ADDR set to 127.0.0.1 (nginx is in front — port ${core_port} not exposed publicly)"
+  else
+    bind_addr="0.0.0.0"
+  fi
 
   echo
   info "Generating secrets (press Enter to accept each auto-generated value):"
@@ -280,7 +297,7 @@ setup_core() {
   cat > "$env_file" <<EOF
 CORE_IMAGE=${core_image}
 CORE_PORT=${core_port}
-CORE_BIND_ADDR=0.0.0.0
+CORE_BIND_ADDR=${bind_addr}
 APP_ENV=production
 DATABASE_URL=${db_url}
 JWT_SECRET=${jwt_secret}
@@ -292,6 +309,52 @@ EOF
   echo
   warn "RUNNER_SECRET = ${runner_secret}"
   warn "→ Copy this value when you set up each runner."
+
+  # Store for runner setup to reference
+  CORE_RUNNER_SECRET="$runner_secret"
+}
+
+setup_nginx() {
+  local env_file="${DEPLOY_DIR}/nginx/.env"
+  if [ -f "$env_file" ]; then
+    warn "nginx/.env already exists — skipping (delete it to reconfigure)"
+    # Still read NGINX_DOMAIN for runner default
+    NGINX_DOMAIN=$(grep '^DOMAIN_NAME=' "$env_file" | cut -d= -f2) || true
+    return
+  fi
+
+  header "nginx HTTPS"
+
+  echo
+  info "Domain name that nginx will serve (e.g. core.example.com)."
+  info "Make sure the DNS A record points to this server's IP before issuing a certificate."
+  NGINX_DOMAIN=$(ask "DOMAIN_NAME")
+
+  local certbot_email certbot_staging="0"
+  echo
+  info "Certificate type:"
+  echo "  1) Self-signed  — local dev, no internet needed, browser shows a warning"
+  echo "  2) Let's Encrypt — production, requires a public domain reachable on port 80"
+  local cert_choice
+  cert_choice=$(ask "Choose [1/2]" "1")
+
+  if [ "$cert_choice" = "2" ]; then
+    certbot_email=$(ask "CERTBOT_EMAIL (Let's Encrypt account)")
+    if ask_yn "Use Let's Encrypt staging CA? (safe for testing — avoids rate limits)" "n"; then
+      certbot_staging="1"
+    fi
+  fi
+
+  mkdir -p "${DEPLOY_DIR}/nginx"
+  cat > "$env_file" <<EOF
+DOMAIN_NAME=${NGINX_DOMAIN}
+CERTBOT_EMAIL=${certbot_email:-}
+CERTBOT_STAGING=${certbot_staging}
+EOF
+  success "nginx/.env written"
+
+  # Store cert type for deploy step
+  NGINX_CERT_TYPE="$cert_choice"
 }
 
 setup_runner() {
@@ -312,20 +375,20 @@ setup_runner() {
   runner_image=$(ask "RUNNER_IMAGE" "${DOCKERHUB_USER}/noderouter-runner:latest")
 
   echo
-  info "CORE_WS_URL — WebSocket URL of noderouter-core reachable from this runner host."
-  info "  Same host (Docker bridge): ws://noderouter-core:3000"
-  info "  Different host:            ws://192.168.1.x:3000  or  wss://core.example.com"
+  info "CORE_WS_URL — runner always runs on the same host as core."
+  info "  Uses the internal Docker network directly (not through nginx)."
+  local ws_default="ws://noderouter-core:3000"
 
   local core_ws_url db_url runner_secret async_workers sync_workers
-  core_ws_url=$(ask "CORE_WS_URL")
+  core_ws_url=$(ask "CORE_WS_URL" "$ws_default")
 
   echo
-  info "DATABASE_URL — same postgres that core uses, reachable from this runner host."
+  info "DATABASE_URL — same postgres that core uses."
   db_url=$(ask "DATABASE_URL")
 
   echo
   info "RUNNER_SECRET — must match the value in core/.env exactly."
-  runner_secret=$(ask "RUNNER_SECRET (from core/.env)")
+  runner_secret=$(ask "RUNNER_SECRET (from core/.env)" "${CORE_RUNNER_SECRET:-}")
 
   async_workers=$(ask "ASYNC_MAX_WORKERS" "4")
   sync_workers=$(ask "SYNC_MAX_WORKERS" "8")
@@ -370,7 +433,7 @@ echo -e "${BOLD}${CYAN}╚══════════════════
 check_deps
 
 # Create service directories up front so .env writes never fail on a fresh machine
-mkdir -p "${DEPLOY_DIR}/postgres" "${DEPLOY_DIR}/core" "${DEPLOY_DIR}/runner"
+mkdir -p "${DEPLOY_DIR}/postgres" "${DEPLOY_DIR}/core" "${DEPLOY_DIR}/nginx" "${DEPLOY_DIR}/runner"
 
 echo
 info "Docker Hub username — used to pre-fill image name defaults."
@@ -385,14 +448,21 @@ echo
 # Use if/then — avoids running `false` as a command under set -e
 DEPLOY_POSTGRES=false
 DEPLOY_CORE=false
+USE_NGINX=false
 DEPLOY_RUNNER=false
+NGINX_DOMAIN=""
+NGINX_CERT_TYPE="1"
+CORE_RUNNER_SECRET=""
 
-if ask_yn "Configure PostgreSQL?"; then DEPLOY_POSTGRES=true; fi
-if ask_yn "Configure Core?";       then DEPLOY_CORE=true;     fi
-if ask_yn "Configure Runner?";     then DEPLOY_RUNNER=true;   fi
+if ask_yn "Configure PostgreSQL?";          then DEPLOY_POSTGRES=true; fi
+if ask_yn "Configure Core?";               then DEPLOY_CORE=true;     fi
+if ask_yn "Configure nginx HTTPS proxy?"; then USE_NGINX=true;       fi
+if ask_yn "Configure Runner?";             then DEPLOY_RUNNER=true;   fi
 
+# nginx must be known before core (affects CORE_BIND_ADDR) and runner (affects CORE_WS_URL default)
 if [ "$DEPLOY_POSTGRES" = "true" ]; then setup_postgres; fi
 if [ "$DEPLOY_CORE"     = "true" ]; then setup_core;     fi
+if [ "$USE_NGINX"       = "true" ]; then setup_nginx;    fi
 if [ "$DEPLOY_RUNNER"   = "true" ]; then setup_runner;   fi
 
 ensure_gitignored
@@ -401,15 +471,57 @@ ensure_compose_files
 header "Deploy"
 if ask_yn "Start configured services now?"; then
 
+  # ── 1. Shared Docker network — created by core, joined by nginx and runner ───
+  if ! docker network inspect noderouter >/dev/null 2>&1; then
+    info "Creating shared Docker network 'noderouter'…"
+    docker network create noderouter
+    success "Network 'noderouter' created"
+  else
+    info "Docker network 'noderouter' already exists — skipping"
+  fi
+
+  # ── 2. PostgreSQL ─────────────────────────────────────────────────────────────
   if [ "$DEPLOY_POSTGRES" = "true" ] && [ -f "${DEPLOY_DIR}/postgres/.env" ]; then
     start_service postgres "${DEPLOY_DIR}/postgres/.env" noderouter-postgres
     wait_healthy noderouter-postgres 60
   fi
 
+  # ── 3. Core ───────────────────────────────────────────────────────────────────
   if [ "$DEPLOY_CORE" = "true" ] && [ -f "${DEPLOY_DIR}/core/.env" ]; then
     start_service core "${DEPLOY_DIR}/core/.env" noderouter-core
   fi
 
+  # ── 4. nginx (cert init + start) ─────────────────────────────────────────────
+  if [ "$USE_NGINX" = "true" ] && [ -f "${DEPLOY_DIR}/nginx/.env" ]; then
+    local_domain=$(grep '^DOMAIN_NAME=' "${DEPLOY_DIR}/nginx/.env" | cut -d= -f2)
+    cert_path="/etc/letsencrypt/live/${local_domain}/fullchain.pem"
+
+    # Check if a cert already exists in the certbot volume
+    cert_exists=false
+    if docker run --rm \
+        -v noderouter-nginx_certbot_conf:/etc/letsencrypt:ro \
+        alpine test -f "$cert_path" 2>/dev/null; then
+      cert_exists=true
+    fi
+
+    if [ "$cert_exists" = "false" ]; then
+      echo
+      info "No certificate found for ${local_domain} — running cert initialisation…"
+      if [ "${NGINX_CERT_TYPE:-1}" = "2" ]; then
+        info "Issuing Let's Encrypt certificate (requires ${local_domain} to be publicly reachable)…"
+        bash "${DEPLOY_DIR}/nginx/init-certs.sh"
+      else
+        info "Generating self-signed certificate…"
+        bash "${DEPLOY_DIR}/nginx/init-self-signed.sh"
+      fi
+    else
+      info "Certificate already exists for ${local_domain} — skipping cert init"
+    fi
+
+    start_service nginx "${DEPLOY_DIR}/nginx/.env" noderouter-nginx
+  fi
+
+  # ── 5. Runner ─────────────────────────────────────────────────────────────────
   if [ "$DEPLOY_RUNNER" = "true" ]; then
     for env_file in "${DEPLOY_DIR}"/runner/.env.*; do
       [ -f "$env_file" ] || continue
@@ -431,11 +543,16 @@ if ask_yn "Start configured services now?"; then
 
 else
   info "To start later, run:"
+  echo "  docker network create noderouter  # once per host"
   if [ "$DEPLOY_POSTGRES" = "true" ]; then
     echo "  docker compose -f ${DEPLOY_DIR}/postgres/docker-compose.yml --env-file ${DEPLOY_DIR}/postgres/.env --project-name noderouter-postgres up -d"
   fi
   if [ "$DEPLOY_CORE" = "true" ]; then
     echo "  docker compose -f ${DEPLOY_DIR}/core/docker-compose.yml --env-file ${DEPLOY_DIR}/core/.env --project-name noderouter-core up -d"
+  fi
+  if [ "$USE_NGINX" = "true" ]; then
+    echo "  bash ${DEPLOY_DIR}/nginx/init-self-signed.sh  # or init-certs.sh for production"
+    echo "  docker compose -f ${DEPLOY_DIR}/nginx/docker-compose.yml --env-file ${DEPLOY_DIR}/nginx/.env --project-name noderouter-nginx up -d"
   fi
   if [ "$DEPLOY_RUNNER" = "true" ]; then
     echo "  RUNNER_NAME=node1 docker compose -f ${DEPLOY_DIR}/runner/docker-compose.yml --env-file ${DEPLOY_DIR}/runner/.env.node1 --project-name noderouter-runner-node1 up -d"

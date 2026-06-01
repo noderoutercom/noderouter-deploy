@@ -13,6 +13,8 @@ services:
     restart: unless-stopped
     ports:
       - "${CORE_BIND_ADDR:-0.0.0.0}:${CORE_PORT:-3000}:3000"
+    networks:
+      - noderouter
     environment:
       APP_ENV:        ${APP_ENV:-production}
       PORT:           "3000"
@@ -38,3 +40,8 @@ services:
 volumes:
   uploads_data:
     driver: local
+
+networks:
+  noderouter:
+    driver: bridge
+    name: noderouter

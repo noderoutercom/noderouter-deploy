@@ -1,5 +1,5 @@
 # ── Noderouter Runner ─────────────────────────────────────────────────────────
-# Deploy this on any host — the same host as core, or a completely separate one.
+# Deploy this on the same host as core (cross-host is not supported).
 # Multiple runners can run independently; each registers itself with core.
 #
 # Usage (single runner):
@@ -51,7 +51,13 @@ services:
       # Runner's private working directory — populated from the PostgreSQL blob
       # store at startup. No shared volume with core is required.
       - runner_apps:/apps
+    networks:
+      - noderouter
 
 volumes:
   runner_apps:
     driver: local
+
+networks:
+  noderouter:
+    external: true
