@@ -520,7 +520,16 @@ ensure_compose_files
 header "Starting services"
 
 # ── 1. Shared Docker network ──────────────────────────────────────────────────
-if ! docker network inspect noderouter >/dev/null 2>&1; then
+if docker network inspect noderouter >/dev/null 2>&1; then
+  label=$(docker network inspect noderouter --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null || true)
+  if [ -n "$label" ]; then
+    info "Recreating 'noderouter' network (removing stale compose labels)…"
+    docker network rm noderouter 2>/dev/null \
+      || { warn "Could not remove 'noderouter' network — stop all containers using it first, then re-run."; exit 1; }
+    docker network create --driver bridge noderouter >/dev/null
+    success "Recreated 'noderouter' Docker network"
+  fi
+else
   docker network create --driver bridge noderouter >/dev/null
   success "Created 'noderouter' Docker network"
 fi
