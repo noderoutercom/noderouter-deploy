@@ -22,7 +22,6 @@ services:
       DATABASE_URL:   ${DATABASE_URL:?DATABASE_URL is required}
       # Secrets — generate with: openssl rand -hex 32
       JWT_SECRET:     ${JWT_SECRET:?JWT_SECRET is required}
-      PAIRING_KEY:    ${PAIRING_KEY:?PAIRING_KEY is required}
       # RUNNER_SECRET must match the value set in every runner's .env
       RUNNER_SECRET:  ${RUNNER_SECRET:?RUNNER_SECRET is required}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
