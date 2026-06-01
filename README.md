@@ -53,7 +53,7 @@ git clone https://github.com/noderoutercom/noderouter-deploy.git && cd noderoute
 bash scripts/setup.sh
 ```
 
-The script walks you through each service in order, writes `.env` files, and starts everything. Existing `.env` files are skipped so you can re-run safely to add services later.
+The script opens with an upfront menu — choose which services to configure (nginx, PostgreSQL, core, runner), then it prompts for values, generates env files, initialises TLS certificates if needed, and starts everything. Existing env files are skipped, so you can re-run safely to add more services later. Runner env files are written as `runner/.env.<name>` (e.g. `runner/.env.node1`).
 
 ---
 
@@ -124,6 +124,7 @@ Port 5432 is bound to `127.0.0.1` (localhost only). Core and runner connect via 
 cd core
 cp .env.example .env
 # Fill in:
+#   CORE_IMAGE     — 06042013/noderouter-core:latest  (or a specific tag)
 #   DATABASE_URL   — postgresql://noderouter:PASSWORD@noderouter-postgres:5432/noderouter?sslmode=disable
 #   JWT_SECRET     — openssl rand -hex 32
 #   PAIRING_KEY    — openssl rand -hex 32
@@ -141,29 +142,63 @@ docker compose --project-name noderouter-core up -d
 
 Runners run on the **same host** as core and connect via the shared Docker network.
 
+Runner env files are named `runner/.env.<name>` — one file per runner instance.
+
 ```bash
 cd runner
-cp .env.example .env
+cp .env.example .env.node1
 # Fill in:
+#   RUNNER_IMAGE   — 06042013/noderouter-runner:latest  (or a specific tag)
 #   RUNNER_NAME    — unique per runner (e.g. node1, node2)
 #   RUNNER_SECRET  — must match core's RUNNER_SECRET exactly
 #   DATABASE_URL   — same postgres as core
 #
 # CORE_WS_URL defaults to ws://noderouter-core:3000 — no change needed.
-docker compose --project-name noderouter-runner-node1 up -d
+RUNNER_NAME=node1 docker compose \
+  -f runner/docker-compose.yml \
+  --env-file runner/.env.node1 \
+  --project-name noderouter-runner-node1 \
+  up -d
 ```
 
 #### Multiple runners on the same host
 
-The setup script writes per-runner env files as `runner/.env.<name>`. To add more manually:
+Add a new env file per runner and start each with its own project name:
 
 ```bash
+cp runner/.env.node1 runner/.env.node2   # edit RUNNER_NAME inside
 RUNNER_NAME=node2 docker compose \
   -f runner/docker-compose.yml \
   --env-file runner/.env.node2 \
   --project-name noderouter-runner-node2 \
   up -d
 ```
+
+---
+
+## Updating Configuration
+
+Use `scripts/update-env.sh` to change one or more env variables and restart the affected container in a single step:
+
+```bash
+# Change a single value
+bash scripts/update-env.sh core ADMIN_PASSWORD=NewPass123
+
+# Rotate multiple secrets at once
+bash scripts/update-env.sh core \
+  JWT_SECRET=$(openssl rand -hex 32) \
+  PAIRING_KEY=$(openssl rand -hex 32)
+
+# Update a runner
+bash scripts/update-env.sh runner.node1 ASYNC_MAX_WORKERS=8
+
+# Open the env file in $EDITOR for freeform editing
+bash scripts/update-env.sh postgres
+```
+
+The script backs up the existing file (`.env.bak.<timestamp>`) before writing, shows a diff of what changed, and prompts before restarting the container.
+
+Services: `postgres` | `core` | `runner.<name>`
 
 ---
 
@@ -220,7 +255,7 @@ On startup each runner connects to PostgreSQL and pulls all app `code_bytes` blo
 | `CORE_BIND_ADDR` | | `0.0.0.0` | Set `127.0.0.1` when nginx is in front |
 | `APP_ENV` | | `production` | |
 
-### `runner/.env`
+### `runner/.env.<name>`
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
