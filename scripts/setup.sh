@@ -7,8 +7,8 @@
 set -euo pipefail
 trap 'echo -e "\n${RED}✗ Deploy aborted — check the error above.${NC}" >&2' ERR
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'; CYAN=$'\033[0;36m'; BOLD=$'\033[1m'; NC=$'\033[0m'
 
 # Base URL for downloading compose/example files when running via curl pipe
 BASE_URL="https://raw.githubusercontent.com/noderoutercom/noderouter-deploy/main"
@@ -220,6 +220,7 @@ setup_postgres() {
   local env_file="${DEPLOY_DIR}/postgres/.env"
   if [ -f "$env_file" ]; then
     warn "postgres/.env already exists — skipping (delete it to reconfigure)"
+    PG_PASS=""
     return
   fi
 
@@ -260,6 +261,7 @@ setup_core() {
   local env_file="${DEPLOY_DIR}/core/.env"
   if [ -f "$env_file" ]; then
     warn "core/.env already exists — skipping (delete it to reconfigure)"
+    JWT_SECRET=""; RUNNER_SECRET=""; ADMIN_PASSWORD=""
     return
   fi
 
