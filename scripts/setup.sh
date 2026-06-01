@@ -236,20 +236,23 @@ setup_postgres() {
   echo "  0.0.0.0   → all interfaces (needed when core/runner are on other hosts)"
   echo "  127.0.0.1 → localhost only (if core/runner are on the same host)"
 
-  local bind_addr pg_port pg_user pg_pass pg_db
-  bind_addr=$(ask "POSTGRES_BIND_ADDR" "0.0.0.0")
-  pg_port=$(ask "POSTGRES_PORT" "5432")
-  pg_user=$(ask "POSTGRES_USER" "noderouter")
-  pg_pass=$(ask_secret "POSTGRES_PASSWORD (stored in postgres/.env)")
-  pg_db=$(ask "POSTGRES_DB" "noderouter")
+  local bind_addr
+  bind_addr=$(ask "POSTGRES_BIND_ADDR" "127.0.0.1")
+  PG_PORT=$(ask "POSTGRES_PORT" "5432")
+  PG_USER=$(ask "POSTGRES_USER" "noderouter")
+  PG_PASS=$(ask_secret "POSTGRES_PASSWORD")
+  PG_DB=$(ask "POSTGRES_DB" "noderouter")
+
+  # Construct DATABASE_URL once — reused as the default in setup_core and setup_runner
+  BUNDLED_DATABASE_URL="postgresql://${PG_USER}:${PG_PASS}@noderouter-postgres:${PG_PORT}/${PG_DB}?sslmode=disable"
 
   mkdir -p "${DEPLOY_DIR}/postgres"
   cat > "$env_file" <<EOF
 POSTGRES_BIND_ADDR=${bind_addr}
-POSTGRES_PORT=${pg_port}
-POSTGRES_USER=${pg_user}
-POSTGRES_PASSWORD=${pg_pass}
-POSTGRES_DB=${pg_db}
+POSTGRES_PORT=${PG_PORT}
+POSTGRES_USER=${PG_USER}
+POSTGRES_PASSWORD=${PG_PASS}
+POSTGRES_DB=${PG_DB}
 EOF
   success "postgres/.env written"
 }
@@ -270,10 +273,9 @@ setup_core() {
 
   echo
   info "DATABASE_URL — the PostgreSQL DSN core will connect to."
-  info "  Example: postgresql://noderouter:PASSWORD@localhost:5432/noderouter?sslmode=disable"
 
   local db_url core_port jwt_secret pairing_key runner_secret admin_pass bind_addr
-  db_url=$(ask "DATABASE_URL")
+  db_url=$(ask "DATABASE_URL" "${BUNDLED_DATABASE_URL:-}")
   core_port=$(ask "CORE_PORT (host port)" "3000")
 
   # Bind to localhost only when nginx sits in front; otherwise expose on all interfaces.
@@ -384,7 +386,7 @@ setup_runner() {
 
   echo
   info "DATABASE_URL — same postgres that core uses."
-  db_url=$(ask "DATABASE_URL")
+  db_url=$(ask "DATABASE_URL" "${BUNDLED_DATABASE_URL:-}")
 
   echo
   info "RUNNER_SECRET — must match the value in core/.env exactly."
@@ -454,6 +456,11 @@ DEPLOY_RUNNER=false
 NGINX_DOMAIN=""
 NGINX_CERT_TYPE="1"
 CORE_RUNNER_SECRET=""
+BUNDLED_DATABASE_URL=""
+PG_USER="noderouter"
+PG_PASS=""
+PG_DB="noderouter"
+PG_PORT="5432"
 
 if ask_yn "Configure PostgreSQL?";          then DEPLOY_POSTGRES=true; fi
 if ask_yn "Configure Core?";               then DEPLOY_CORE=true;     fi
