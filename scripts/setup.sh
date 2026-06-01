@@ -520,13 +520,9 @@ ensure_compose_files
 header "Starting services"
 
 # ── 1. Shared Docker network ──────────────────────────────────────────────────
-# ── 1. Remove stale noderouter network if it was not created by compose ───────
-if docker network inspect noderouter >/dev/null 2>&1; then
-  label=$(docker network inspect noderouter --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null || true)
-  if [ -z "$label" ]; then
-    info "Removing pre-existing 'noderouter' network (will be recreated by compose)…"
-    docker network rm noderouter 2>/dev/null || warn "Could not remove network — stop all containers using it first, then re-run."
-  fi
+if ! docker network inspect noderouter >/dev/null 2>&1; then
+  docker network create --driver bridge noderouter >/dev/null
+  success "Created 'noderouter' Docker network"
 fi
 
 # ── 2. PostgreSQL ─────────────────────────────────────────────────────────────
