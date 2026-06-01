@@ -474,12 +474,6 @@ ensure_compose_files
 header "Starting services"
 
 # ── 1. Shared Docker network ──────────────────────────────────────────────────
-if ! docker network inspect noderouter >/dev/null 2>&1; then
-  info "Creating shared Docker network 'noderouter'…"
-  docker network create --label com.docker.compose.network=noderouter noderouter
-  success "Network 'noderouter' created"
-fi
-
 # ── 2. PostgreSQL ─────────────────────────────────────────────────────────────
 if [ "$DEPLOY_POSTGRES" = "true" ] && [ -f "${DEPLOY_DIR}/postgres/.env" ]; then
   start_service postgres "${DEPLOY_DIR}/postgres/.env" noderouter-postgres

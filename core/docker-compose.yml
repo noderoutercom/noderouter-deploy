@@ -43,4 +43,5 @@ volumes:
 
 networks:
   noderouter:
-    external: true
+    driver: bridge
+    name: noderouter
