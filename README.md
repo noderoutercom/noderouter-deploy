@@ -153,7 +153,7 @@ cp .env.example .env.node1
 #   RUNNER_SECRET  — must match core's RUNNER_SECRET exactly
 #   DATABASE_URL   — same postgres as core
 #
-# CORE_WS_URL defaults to ws://noderouter-core:3000 — no change needed.
+# CORE_GRPC_TARGET defaults to noderouter-core:50051 — no change needed for same-host runners.
 RUNNER_NAME=node1 docker compose \
   -f runner/docker-compose.yml \
   --env-file runner/.env.node1 \
@@ -263,7 +263,8 @@ On startup each runner connects to PostgreSQL and pulls all app `code_bytes` blo
 | `RUNNER_SECRET` | ✅ | — | Copy from `core/.env` |
 | `RUNNER_IMAGE` | ✅ | `06042013/noderouter-runner:latest` | Docker Hub image |
 | `RUNNER_NAME` | | `node1` | Unique per runner instance |
-| `CORE_WS_URL` | | `ws://noderouter-core:3000` | Internal Docker network — no change needed |
+| `CORE_GRPC_TARGET` | | `noderouter-core:50051` | mTLS Tunnel — same-host default; remote: `domain:8443` |
+| `CORE_ENROLL_TARGET` | | `noderouter-core:50052` | Plaintext Enroll — same-host default; remote: `domain:8444` |
 | `NODE_ID` | | *(auto)* | Leave blank for auto-registration |
 | `ASYNC_MAX_WORKERS` | | `4` | |
 | `SYNC_MAX_WORKERS` | | `8` | |

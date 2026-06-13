@@ -363,7 +363,9 @@ setup_runner() {
   local runner_image
   runner_image=$(ask "RUNNER_IMAGE" "06042013/noderouter-runner:latest")
 
-  local core_ws_url="ws://noderouter-core:3000"
+  # Default to Docker-internal direct addresses; remote runners can override.
+  local core_grpc_target="noderouter-core:50051"
+  local core_enroll_target="noderouter-core:50052"
   local db_url runner_secret async_workers sync_workers
 
   local db_url="${CORE_DATABASE_URL:-${BUNDLED_DATABASE_URL:-}}"
@@ -378,7 +380,8 @@ setup_runner() {
   cat > "$env_file" <<EOF
 RUNNER_IMAGE=${runner_image}
 RUNNER_NAME=${runner_name}
-CORE_WS_URL=${core_ws_url}
+CORE_GRPC_TARGET=${core_grpc_target}
+CORE_ENROLL_TARGET=${core_enroll_target}
 DATABASE_URL=${db_url}
 RUNNER_SECRET=${runner_secret}
 NODE_ID=
@@ -510,7 +513,7 @@ if [ "$_needs_secrets" = "true" ]; then
   fi
 fi
 
-# nginx must be known before core (affects CORE_BIND_ADDR) and runner (affects CORE_WS_URL default)
+# nginx must be known before core (affects CORE_BIND_ADDR) and runner (affects gRPC target defaults)
 if [ "$DEPLOY_POSTGRES" = "true" ]; then setup_postgres; fi
 if [ "$DEPLOY_CORE"     = "true" ]; then setup_core;     fi
 if [ "$USE_NGINX"       = "true" ]; then setup_nginx;    fi

@@ -1,9 +1,9 @@
 # ── Noderouter Runner ─────────────────────────────────────────────────────────
-# Deploy this on the same host as core (cross-host is not supported).
-# Multiple runners can run independently; each registers itself with core.
+# Deploy this on the same host as core or any host with network access to core.
+# Multiple runners can run independently; each enrolls itself with core over gRPC.
 #
 # Usage (single runner):
-#   cp .env.example .env        # fill in CORE_WS_URL, DATABASE_URL, RUNNER_SECRET
+#   cp .env.example .env        # fill in CORE_GRPC_TARGET, DATABASE_URL, RUNNER_SECRET
 #   docker compose up -d
 #
 # Usage (multiple runners on the same host):
@@ -26,8 +26,11 @@ services:
       # Stable node name used by core for registration — must be unique per runner.
       HOSTNAME: noderouter-runner-${RUNNER_NAME:-node1}
 
-      # ── Core connection ──────────────────────────────────────────────────────
-      CORE_WS_URL: ${CORE_WS_URL:?CORE_WS_URL is required}
+      # ── Core connection (gRPC mTLS) ──────────────────────────────────────────
+      # Docker-internal runners (same host as core): use the service name directly.
+      # Remote runners (different host): use the NGINX stream passthrough addresses.
+      CORE_GRPC_TARGET:   ${CORE_GRPC_TARGET:-noderouter-core:50051}
+      CORE_ENROLL_TARGET: ${CORE_ENROLL_TARGET:-noderouter-core:50052}
 
       # ── Database connection ──────────────────────────────────────────────────
       # Same PostgreSQL instance as core uses.

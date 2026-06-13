@@ -13,6 +13,8 @@ services:
     restart: unless-stopped
     ports:
       - "${CORE_BIND_ADDR:-0.0.0.0}:${CORE_PORT:-3000}:3000"
+      # gRPC ports are only reachable inside the Docker network (nginx proxies them
+      # externally via TCP passthrough). No host port publish is needed here.
     networks:
       - noderouter
     environment:
@@ -25,6 +27,9 @@ services:
       # RUNNER_SECRET must match the value set in every runner's .env
       RUNNER_SECRET:  ${RUNNER_SECRET:?RUNNER_SECRET is required}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      # gRPC listener ports (defaults match the values below; set to override)
+      GRPC_PORT:        ${GRPC_PORT:-50051}
+      GRPC_ENROLL_PORT: ${GRPC_ENROLL_PORT:-50052}
     volumes:
       # Uploaded ZIP archives — core's private storage, not shared with runners.
       # Runners fetch app code directly from the PostgreSQL blob store (code_bytes).

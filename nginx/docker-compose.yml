@@ -19,7 +19,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # gRPC TCP passthrough — runners dial these from outside the Docker network.
+      # 8443 → Core:50051 (mTLS Tunnel)  |  8444 → Core:50052 (plaintext Enroll)
+      - "8443:8443"
+      - "8444:8444"
     volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./templates:/etc/nginx/templates:ro
       - ./conf.d/map.conf:/etc/nginx/conf.d/map.conf:ro
       - certbot_conf:/etc/letsencrypt:ro
